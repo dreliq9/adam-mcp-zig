@@ -56,6 +56,20 @@ Field order is fixed at envelope_version → status → value → raw → metric
 
 `isError` mirrors `Result.status == FAIL`. Clients that understand the convention re-parse `content[0].text` as JSON to recover the structured Result; clients that don't see it as a text blob.
 
+## Platform support
+
+The SDK targets POSIX (macOS + Linux) and Windows as first-class platforms.
+
+- **macOS/Linux:** `zig build` builds native binaries; `./tools/smoke_test.sh` and `./tools/byte_equivalence_check.sh` are the verification entry points.
+- **Windows:** native `zig build` works the same way; `.\tools\smoke_test.ps1` and `.\tools\byte_equivalence_check.ps1` are the PowerShell equivalents.
+- **Cross-compile:** `zig build -Dtarget=x86_64-windows-gnu` produces `.exe` artifacts under `zig-out/bin/` from any host.
+
+Cross-platform invariants:
+- Stdio I/O uses `std.Io.File.stdin()` / `stdout()` via the supplied `io: std.Io`. No direct POSIX syscalls — Windows HANDLEs aren't file descriptors.
+- Environment variables are reached via `init.environ_map.get(name)`. `homeDir(allocator, env)` reads `HOME` on POSIX, `USERPROFILE` on Windows.
+- Command-line args come from `init.minimal.args.toSlice(arena)`, which yields WTF-8 strings on Windows and opaque bytes on POSIX.
+- Result envelope wire format is byte-identical across platforms (see `Result wire shape` above and `tools/byte_equivalence_check.*`).
+
 ## SDK versioning
 
 CalVer-aligned with `HOUSE_STYLE.md`. Breaking changes require a `CHANGELOG.md ### Breaking` entry citing the rule_id (§3.18 stability). Public symbols in `src/root.zig` are the API surface; everything else is implementation detail.

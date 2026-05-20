@@ -294,28 +294,29 @@ pub const BaseServer = struct {
     /// PORT-NOTE [equivalent]: Python's BaseServer.run() delegates to
     ///   FastMCP, which does the stdio loop. Zig owns the loop here.
     ///
-    /// PORT-NOTE [deferred-B]: 0.16's std.Io.Reader streaming readers
-    ///   have buggy EOF detection on pipes (observed: busy-loop at
-    ///   100% CPU instead of EndOfStream after stdin closes). Phase A
-    ///   bypasses the Reader abstraction and uses std.posix.read/write
-    ///   directly, which gives reliable 0-on-EOF semantics. Phase B
-    ///   will revisit once the Reader-on-pipe interaction stabilizes
-    ///   upstream. The `io` parameter is accepted but unused.
+    /// PORT-NOTE [equivalent]: Uses `std.Io.File.stdin().readStreaming`
+    ///   and `std.Io.File.stdout().writeStreamingAll` via the supplied
+    ///   `io: std.Io`, so the loop is cross-platform (POSIX + Windows).
+    ///   EOF is signalled by `error.EndOfStream` rather than `n == 0`,
+    ///   which avoids the 0.15 Reader-on-pipe busy-loop bug noted in
+    ///   pre-0.16 prototypes. The 4096-byte chunk size is unchanged.
     pub fn run(self: *BaseServer, io: std.Io) !void {
-        _ = io;
-        const stdin_fd = std.posix.STDIN_FILENO;
-        const stdout_fd = std.posix.STDOUT_FILENO;
+        const stdin = std.Io.File.stdin();
+        const stdout = std.Io.File.stdout();
 
         var pending: std.ArrayList(u8) = .empty;
         defer pending.deinit(self.allocator);
         var chunk: [4096]u8 = undefined;
 
         while (true) {
-            const n = std.posix.read(stdin_fd, &chunk) catch |err| {
-                log.warn("stdin read failed: {s}", .{@errorName(err)});
-                return;
+            const n = stdin.readStreaming(io, &.{&chunk}) catch |err| switch (err) {
+                error.EndOfStream => return,
+                else => {
+                    log.warn("stdin read failed: {s}", .{@errorName(err)});
+                    return;
+                },
             };
-            if (n == 0) return; // EOF
+            if (n == 0) return; // defensive: vectored read returned no bytes
             try pending.appendSlice(self.allocator, chunk[0..n]);
 
             while (std.mem.indexOfScalar(u8, pending.items, '\n')) |nl| {
@@ -324,11 +325,14 @@ pub const BaseServer = struct {
                     if (self.handleMessage(self.allocator, line)) |maybe_response| {
                         if (maybe_response) |response| {
                             defer self.allocator.free(response);
-                            // PORT-NOTE [deferred-B]: stock 0.16 has
-                            //   std.posix.read but not std.posix.write.
-                            //   Use libc write directly for Phase A.
-                            _ = std.c.write(stdout_fd, response.ptr, response.len);
-                            _ = std.c.write(stdout_fd, "\n", 1);
+                            stdout.writeStreamingAll(io, response) catch |err| {
+                                log.warn("stdout write failed: {s}", .{@errorName(err)});
+                                return;
+                            };
+                            stdout.writeStreamingAll(io, "\n") catch |err| {
+                                log.warn("stdout write failed: {s}", .{@errorName(err)});
+                                return;
+                            };
                         }
                     } else |err| {
                         log.warn("handleMessage error: {s}", .{@errorName(err)});

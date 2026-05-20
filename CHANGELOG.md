@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Phase B targets
 See `ROADMAP.md`.
 
+## [0.2.0] — 2026-05-20
+
+### Added
+- **Windows is now a first-class platform.** Cross-compile via `zig build -Dtarget=x86_64-windows-gnu` produces working `.exe` artifacts. Native Windows builds work via the same `zig build` invocation. Both `adam-mcp.exe` (CLI) and `adam-greet-zig.exe` (reference MCP) are verified.
+- `tools/smoke_test.ps1` — PowerShell equivalent of `tools/smoke_test.sh`. Same JSON-RPC verification flow, MCP-conformant initialize handshake (FastMCP requires it).
+- `tools/byte_equivalence_check.ps1` — PowerShell equivalent of the cross-language Zig-vs-Python check.
+- `adam_mcp_zig.homeDir(allocator, environ_map)` — cross-platform user-home lookup. Reads `HOME` on POSIX, `USERPROFILE` on Windows. Public export.
+- SPEC.md "Platform support" section codifies the cross-platform invariants for stdio, env vars, and argv.
+
+### Changed
+- `BaseServer.run(io)` no longer bypasses the Io vtable. Replaced the POSIX-only `std.posix.read` + `std.c.write` pair with cross-platform `std.Io.File.stdin().readStreaming(io, ...)` + `std.Io.File.stdout().writeStreamingAll(io, ...)`. The `io` parameter is now actually used; EOF is signalled via `error.EndOfStream`.
+- `outputDir(allocator, io, environ_map, name)` — signature now takes `environ_map: *const std.process.Environ.Map` as third arg. Required for cross-platform home-dir lookup; 0.16 removed global env accessors. **Breaking** for the signature, but no production callers existed in 0.1.0 (the reference MCP only mentions it in a doc comment).
+- `adam-mcp` CLI parses args via `init.minimal.args.toSlice(arena)` instead of indexing `args.vector` directly. Avoids the Windows-native UTF-16 argv format.
+
+### Notes
+- 48 passing tests on stock Zig 0.16.0 (was 47 in 0.1.0 — added a `homeDir` error-path test).
+- Cross-compile verified on macOS host: `file zig-out/bin/adam-mcp.exe` → `PE32+ executable (console) x86-64, for MS Windows`.
+- Runtime verification on a Windows host is deferred to the user; macOS dev box has no Wine installation.
+
 ## [0.1.0] — 2026-05-20
 
 ### Breaking

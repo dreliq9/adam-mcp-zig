@@ -32,6 +32,7 @@ pub const isPassthrough = escape_mod.isPassthrough;
 pub const Workflow = workflows_mod.Workflow;
 
 pub const outputDir = output_mod.outputDir;
+pub const homeDir = output_mod.homeDir;
 
 pub const validates = validation_mod.validates;
 pub const requires = guardrails_mod.requires;
