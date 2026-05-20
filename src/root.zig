@@ -4,10 +4,11 @@
 //! symbol implements.
 //!
 //! PORT-NOTE [equivalent]: Python's `adam_mcp_py/__init__.py` re-exports
-//!   Result, Status, validates, requires, BackendProtocol, detect_backend,
-//!   Workflow, output_dir, passthrough, is_passthrough, BaseServer.
-//!   This Zig root.zig mirrors that surface; each symbol resolves to its
-//!   own module file. Phase A coverage tracked in ROADMAP.md.
+//!   ENVELOPE_VERSION, Raw, Result, Status, validates, requires,
+//!   BackendProtocol, detect_backend, Workflow, output_dir, passthrough,
+//!   is_passthrough, BaseServer. This Zig root.zig mirrors that surface;
+//!   each symbol resolves to its own module file. Phase A coverage
+//!   tracked in ROADMAP.md.
 
 const result_mod = @import("result.zig");
 const escape_mod = @import("escape.zig");
@@ -22,6 +23,8 @@ const base_server_mod = @import("base_server.zig");
 
 pub const Result = result_mod.Result;
 pub const Status = result_mod.Status;
+pub const Raw = result_mod.Raw;
+pub const ENVELOPE_VERSION = result_mod.ENVELOPE_VERSION;
 
 pub const passthrough = escape_mod.passthrough;
 pub const isPassthrough = escape_mod.isPassthrough;

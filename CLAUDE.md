@@ -30,7 +30,7 @@ Pairs well with:
 ```bash
 cd ~/Projects/adam-mcp-zig
 zig build              # SDK + CLI + reference MCP
-zig build test         # 45 tests
+zig build test         # 47 tests
 ./zig-out/bin/adam-mcp new <name> --target <path>   # scaffold
 ./zig-out/bin/adam-greet-zig    # reference MCP (stdio JSON-RPC)
 ```
@@ -40,6 +40,6 @@ zig build test         # 45 tests
 When modifying source in `src/`:
 - Every Python feature that diverges from verbatim translation needs a `PORT-NOTE [<status>]` comment with one of `equivalent | dropped | deferred-B | n/a-language`. No silent drops during Phase A. (Phase A complete as of 2026-05-13 — but the discipline holds for any new code added.)
 - Cross-link new public symbols to a HOUSE_STYLE.md rule via `Implements §X.Y` in the docstring.
-- Run `zig build test` before committing. All 45 tests pass on stock Zig 0.16.0.
+- Run `zig build test` before committing. All 47 tests pass on stock Zig 0.16.0.
 
 Stock Zig 0.16.0 is the default `zig`; the Espressif fork lives at `zig-esp` per `~/.zshrc`.

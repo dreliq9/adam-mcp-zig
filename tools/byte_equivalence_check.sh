@@ -28,7 +28,8 @@ if [ ! -x "$ZIG_BIN" ]; then
 fi
 
 REQUESTS=$(cat <<'EOF'
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"byte-equivalence-check","version":"0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compose_greeting","arguments":{"name":"World","formality":7}}}
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"compose_raw_greeting","arguments":{"template":"raw"}}}
@@ -65,6 +66,7 @@ Expected equivalences (these MUST match):
   - compose_raw_greeting Result.value: "raw"
   - mode_tag: "[LOCAL]"
   - isError: false on success, true on parse fail
+  - envelope_version: 1 (first field of every serialized Result)
 
 INFO
     exit 0
@@ -94,6 +96,7 @@ check_both '"name":"compose_raw_greeting"'
 check_both 'good morning, World'
 check_both '\[LOCAL\]'
 check_both '"isError":false'
+check_both 'envelope_version'
 
 echo ""
 echo "Done. Wire format differs (expected) but semantic content should match above."

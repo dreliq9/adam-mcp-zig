@@ -39,10 +39,12 @@ Every MCP using this SDK MUST:
 Serialized form (byte-stable; verified by tests):
 
 ```
-{"status":"OK|WARN|FAIL","value":<T-or-null>,"raw":<json-or-null>,"metrics":{...},"diagnostics":[...],"hint":<str-or-null>,"mode_tag":<str-or-null>}
+{"envelope_version":1,"status":"OK|WARN|FAIL","value":<T-or-null>,"raw":<json-or-null>,"metrics":{...},"diagnostics":[...],"hint":<str-or-null>,"mode_tag":<str-or-null>}
 ```
 
-Field order is fixed at status → value → raw → metrics → diagnostics → hint → mode_tag, matching Python's dataclass field order so cross-language byte comparison is meaningful.
+Field order is fixed at envelope_version → status → value → raw → metrics → diagnostics → hint → mode_tag, matching Python's dataclass field order so cross-language byte comparison is meaningful. `envelope_version` is first by design — parsers can short-circuit on version mismatch before reading the rest.
+
+**The envelope is a wire format.** Once byte-equivalence with Python is contractual, `Result` is no longer just an in-process Zig struct — it is a serialization format. Field order is contractual. New top-level fields require an `envelope_version` bump and a CHANGELOG `### Breaking` entry, in lockstep with the Python side.
 
 ## MCP envelope
 

@@ -3,10 +3,13 @@
 //! Every tool returns a Result. Never raw output, never raw exceptions.
 //!
 //! PORT-NOTE [equivalent]: Python's `adam_mcp_py/result.py` uses
-//!   `@dataclass` to generate __init__/__eq__/fields. Zig structs have
-//!   field defaults and equality natively, so no equivalent decorator
-//!   is needed. Verified: every Python public symbol (Status, Result,
-//!   ok, warn, fail, to_dict) has a Zig equivalent below.
+//!   `@dataclass(kw_only=True)` to generate __init__/__eq__/fields and
+//!   forbid positional construction. Zig structs have field defaults
+//!   and named-field-only struct literals natively, so no equivalent
+//!   decorator is needed (positional construction was never available).
+//!   Verified: every Python public symbol (Status, Result, Raw,
+//!   ENVELOPE_VERSION, ok, warn, fail, to_dict) has a Zig equivalent
+//!   below.
 //!
 //! PORT-NOTE [equivalent]: Python uses `dataclasses.asdict()` to
 //!   serialize Result for JSON encoding. Zig uses std.json.Stringify's
@@ -16,6 +19,30 @@
 //!   produces stable wire shape" below).
 
 const std = @import("std");
+
+/// Raw — type alias for the §1.1 documented exception to strict typing.
+///
+/// `Result.raw` carries unknown-shape payloads from foreign APIs;
+/// typing it as `std.json.Value` (any-shaped JSON) is intentional.
+/// Use this alias for self-documenting annotations.
+///
+/// PORT-NOTE [equivalent]: Python uses `Raw: TypeAlias = Any`. Zig's
+///   natural any-shaped JSON type is `std.json.Value`; an MCP that
+///   wants stricter typing can decode `Raw` into a project-specific
+///   struct without changing the envelope contract.
+pub const Raw = std.json.Value;
+
+/// ENVELOPE_VERSION — wire-format version of the Result envelope.
+///
+/// Bumped only on breaking top-level field changes per §1.1. Cross-
+/// language byte-equivalence depends on the envelope shape; the version
+/// field is the first thing a parser reads so it can short-circuit on
+/// mismatch.
+///
+/// PORT-NOTE [equivalent]: Python exports `ENVELOPE_VERSION: int = 1`
+///   as a module-level constant. Zig mirrors with `pub const
+///   ENVELOPE_VERSION: i32 = 1`. Same wire value (`1`), same semantics.
+pub const ENVELOPE_VERSION: i32 = 1;
 
 /// Status — implements the §1.1 status enum.
 ///
@@ -34,14 +61,17 @@ pub const Status = enum {
 
 /// Result(T) — the unified tool result. Implements §1.1.
 ///
-/// Fields:
-///   status:      OK / WARN / FAIL.
-///   value:       Synthesized/typed output for AI consumption.
-///   raw:         Underlying API response (Principle One support, §6.29).
-///   metrics:     Numeric measurements keyed by name.
-///   diagnostics: Human-readable description of what happened.
-///   hint:        What to try next on FAIL/WARN. REQUIRED for non-OK.
-///   mode_tag:    Which backend/path was used (e.g., "[IPC]", "[LOCAL]").
+/// Fields (in canonical envelope order — byte-equivalence depends on this):
+///   envelope_version: Wire-format version. First field by design.
+///   status:           OK / WARN / FAIL.
+///   value:            Synthesized/typed output for AI consumption.
+///   raw:              Underlying API response (Principle One support,
+///                     §6.29). Typed `Raw` (= std.json.Value) — the
+///                     documented exception to strict typing.
+///   metrics:          Numeric measurements keyed by name.
+///   diagnostics:      Human-readable description of what happened.
+///   hint:             What to try next on FAIL/WARN. REQUIRED for non-OK.
+///   mode_tag:         Which backend/path was used (e.g., "[IPC]", "[LOCAL]").
 ///
 /// Ownership: metrics and diagnostics own their storage. The caller is
 /// responsible for calling `deinit(allocator)` when done. Calling deinit
@@ -55,9 +85,10 @@ pub fn Result(comptime T: type) type {
     return struct {
         const Self = @This();
 
+        envelope_version: i32 = ENVELOPE_VERSION,
         status: Status,
         value: ?T = null,
-        raw: ?std.json.Value = null,
+        raw: ?Raw = null,
         metrics: std.StringHashMapUnmanaged(std.json.Value) = .empty,
         diagnostics: std.ArrayList([]const u8) = .empty,
         hint: ?[]const u8 = null,
@@ -76,7 +107,7 @@ pub fn Result(comptime T: type) type {
 
         pub const OkOpts = struct {
             value: ?T = null,
-            raw: ?std.json.Value = null,
+            raw: ?Raw = null,
             metrics: std.StringHashMapUnmanaged(std.json.Value) = .empty,
             diagnostics: std.ArrayList([]const u8) = .empty,
             mode_tag: ?[]const u8 = null,
@@ -85,7 +116,7 @@ pub fn Result(comptime T: type) type {
         pub const WarnOpts = struct {
             hint: []const u8, // §1.1: every WARN has a hint
             value: ?T = null,
-            raw: ?std.json.Value = null,
+            raw: ?Raw = null,
             metrics: std.StringHashMapUnmanaged(std.json.Value) = .empty,
             diagnostics: std.ArrayList([]const u8) = .empty,
             mode_tag: ?[]const u8 = null,
@@ -93,7 +124,7 @@ pub fn Result(comptime T: type) type {
 
         pub const FailOpts = struct {
             hint: []const u8, // §1.1: every FAIL has a hint
-            raw: ?std.json.Value = null,
+            raw: ?Raw = null,
             metrics: std.StringHashMapUnmanaged(std.json.Value) = .empty,
             diagnostics: std.ArrayList([]const u8) = .empty,
             mode_tag: ?[]const u8 = null,
@@ -151,10 +182,14 @@ pub fn Result(comptime T: type) type {
         ///   dict that FastMCP encodes to JSON. Zig uses
         ///   std.json.Stringify's jsonStringify(self, jws) hook — caller
         ///   controls the writer, no intermediate dict. Field order matches
-        ///   Python's dataclass field order (status, value, raw, metrics,
-        ///   diagnostics, hint, mode_tag) so output is byte-identical.
+        ///   Python's dataclass field order (envelope_version, status,
+        ///   value, raw, metrics, diagnostics, hint, mode_tag) so output
+        ///   is byte-identical.
         pub fn jsonStringify(self: Self, jws: anytype) !void {
             try jws.beginObject();
+
+            try jws.objectField("envelope_version");
+            try jws.write(self.envelope_version);
 
             try jws.objectField("status");
             try jws.write(self.status);
@@ -264,11 +299,11 @@ test "Result.ok — jsonStringify produces stable wire shape" {
     var jws: std.json.Stringify = .{ .writer = &buf.writer };
     try jws.write(r);
 
-    // Field order matches Python dataclass: status, value, raw, metrics,
-    // diagnostics, hint, mode_tag. Byte-identical to Python's
-    // json.dumps(result.to_dict()).
+    // Field order matches Python dataclass: envelope_version, status,
+    // value, raw, metrics, diagnostics, hint, mode_tag. Byte-identical
+    // to Python's json.dumps(result.to_dict()).
     const expected =
-        \\{"status":"OK","value":42,"raw":null,"metrics":{},"diagnostics":[],"hint":null,"mode_tag":"[LOCAL]"}
+        \\{"envelope_version":1,"status":"OK","value":42,"raw":null,"metrics":{},"diagnostics":[],"hint":null,"mode_tag":"[LOCAL]"}
     ;
     try std.testing.expectEqualStrings(expected, buf.written());
 }
@@ -283,7 +318,18 @@ test "Result.fail — jsonStringify shape" {
     try jws.write(r);
 
     const expected =
-        \\{"status":"FAIL","value":null,"raw":null,"metrics":{},"diagnostics":[],"hint":"out of range","mode_tag":null}
+        \\{"envelope_version":1,"status":"FAIL","value":null,"raw":null,"metrics":{},"diagnostics":[],"hint":"out of range","mode_tag":null}
     ;
     try std.testing.expectEqualStrings(expected, buf.written());
+}
+
+test "Result — envelope_version defaults to 1" {
+    var r = Result(i32).ok(.{ .value = 7 });
+    defer r.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(i32, 1), r.envelope_version);
+    try std.testing.expectEqual(@as(i32, 1), ENVELOPE_VERSION);
+}
+
+test "Raw — type alias resolves to std.json.Value" {
+    try std.testing.expectEqual(std.json.Value, Raw);
 }

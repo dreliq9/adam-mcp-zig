@@ -41,6 +41,12 @@ pub const AuditRule = struct {
 /// reserved permanently (never reassigned).
 pub const registry = [_]AuditRule{
     .{
+        .rule_id = "§1.1",
+        .spec_section = "HOUSE_STYLE.md §1.1",
+        .severity_default = .FAIL,
+        .description = "Result envelope shape matches the cross-language contract (envelope_version first; compile-time enforced via struct field defaults — no Phase B runtime check needed)",
+    },
+    .{
         .rule_id = "§3.13",
         .spec_section = "HOUSE_STYLE.md §3.13–§3.17",
         .severity_default = .FAIL,
