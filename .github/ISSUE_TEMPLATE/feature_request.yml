@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a new SDK capability or a Phase B item closure.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please confirm:
+        - The proposal doesn't break Principle Zero ("AI-shaped, not API-shaped") or Principle One ("Escape hatches always available"). See [HOUSE_STYLE.md](https://github.com/dreliq9/adam-mcp-sdk/blob/main/HOUSE_STYLE.md).
+        - If it's a Phase B item already in [ROADMAP.md](../blob/main/ROADMAP.md), reference the number.
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+      description: Concrete agent-task or MCP-author pain point. "I want feature X" without a use case is hard to evaluate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+      description: Sketch the type signature, the call site, or the wire shape. Don't worry about getting it perfect — direction is what matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Why not just use an existing wrapper / drop down via the escape hatch?
+
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Contract
+      options:
+        - label: I've read CONTRIBUTING.md and understand PORT-NOTE discipline applies if Python has a counterpart.
+          required: true

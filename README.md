@@ -2,7 +2,9 @@
 
 A methodology-first MCP (Model Context Protocol) SDK for **Zig 0.16**. Hand-rolled JSON-RPC. Comptime type-checking. AI-shaped tool surface by default. Escape hatches always available.
 
-**Status:** v0.0.1 (Phase A complete, 2026-05-13). 45 passing tests. End-to-end stdio loop verified.
+**Status:** v0.2.0 (2026-05-20). 48 passing tests. End-to-end stdio loop verified. Windows is a first-class target — cross-compile via `zig build -Dtarget=x86_64-windows-gnu`.
+
+> **Pre-1.0.** The public API in `src/root.zig` may break between minor versions. SemVer guarantees kick in at v1.0. Pin exact versions in `build.zig.zon` until then.
 
 ---
 
@@ -20,32 +22,57 @@ The Zig MCP space has one shallow protocol library (`mcp.zig`, v0.0.3) and one h
 - **`Workflow`** — vtable struct for higher-order compositions distinct from atomic tools.
 - **`BaseServer`** — hand-rolled JSON-RPC 2.0 over stdio. Owns the wire so the contract layer enforces at protocol level, not above it. Targets MCP 2024-11-05.
 
-The single load-bearing principle: **AI-shaped, not API-shaped.** One tool per *coherent thing an AI can do*, not one tool per API endpoint. House style and rationale live in [adam-mcp-sdk/HOUSE_STYLE.md](../adam-mcp-sdk/HOUSE_STYLE.md).
+The single load-bearing principle: **AI-shaped, not API-shaped.** One tool per *coherent thing an AI can do*, not one tool per API endpoint. House style and rationale live in [adam-mcp-sdk/HOUSE_STYLE.md](https://github.com/dreliq9/adam-mcp-sdk/blob/main/HOUSE_STYLE.md) (the Python sibling repo; it is the cross-language source of truth).
 
 ---
 
 ### Quickstart
 
 ```bash
-# 1. Build the SDK + CLI.
-git clone <this-repo> ~/Projects/adam-mcp-zig
+# 1. Build the SDK + CLI (macOS / Linux).
+git clone https://github.com/dreliq9/adam-mcp-zig ~/Projects/adam-mcp-zig
 cd ~/Projects/adam-mcp-zig
-zig build           # produces zig-out/bin/adam-mcp + zig-out/bin/adam-greet-zig
-zig build test      # 45 tests pass
+zig build              # produces zig-out/bin/adam-mcp + zig-out/bin/adam-greet-zig
+zig build test         # 48 tests pass
 
 # 2. Scaffold a new MCP.
 ./zig-out/bin/adam-mcp new my-thing --description "what it does" --target ~/Projects/my-thing
 cd ~/Projects/my-thing
 # Edit src/mcp/core_tools.zig to add a real tool.
 zig build
-./zig-out/bin/my_thing      # speaks JSON-RPC on stdio
+./zig-out/bin/my_thing # speaks JSON-RPC on stdio
 
 # 3. Try the reference MCP.
-printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compose_greeting","arguments":{"name":"World","formality":7}}}' \
-| ./zig-out/bin/adam-greet-zig
+./tools/smoke_test.sh
+```
+
+```powershell
+# Windows (PowerShell):
+git clone https://github.com/dreliq9/adam-mcp-zig $HOME\Projects\adam-mcp-zig
+cd $HOME\Projects\adam-mcp-zig
+zig build
+zig build test
+.\zig-out\bin\adam-mcp.exe new my-thing --target $HOME\Projects\my-thing
+.\tools\smoke_test.ps1
+```
+
+```bash
+# Cross-compile from macOS/Linux to Windows:
+zig build -Dtarget=x86_64-windows-gnu    # writes .exe artifacts under zig-out/bin/
+```
+
+### Adding to your project
+
+```bash
+# In your project root:
+zig fetch --save https://github.com/dreliq9/adam-mcp-zig/archive/refs/tags/v0.2.0.tar.gz
+```
+
+Then in `build.zig`:
+
+```zig
+const adam_mcp = b.dependency("adam_mcp_zig", .{});
+exe.root_module.addImport("adam_mcp_zig", adam_mcp.module("adam_mcp_zig"));
 ```
 
 ---

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before filing, please:
+        - Run `zig build test` and confirm the test suite passes for you locally (if it doesn't, that *is* the bug — say so).
+        - Check the [ROADMAP](../blob/main/ROADMAP.md) — your issue may already be a known `[deferred-B]` follow-up.
+        - Skim recent commits / issues to avoid duplicates.
+
+  - type: input
+    id: zig-version
+    attributes:
+      label: Zig version
+      description: Output of `zig version`.
+      placeholder: "0.16.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (x86_64)
+        - Linux (aarch64)
+        - Windows (x86_64)
+        - other (describe in body)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you get?
+      placeholder: |
+        Steps:
+        1. ...
+        2. ...
+
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Build / test output
+      description: Paste the relevant stderr/stdout. Triple-backticks please.
+      render: shell
