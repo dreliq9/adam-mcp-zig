@@ -5,7 +5,6 @@
 **AI-shaped tools by default.** Never raw JSON or unchecked exceptions leaking to LLMs.
 
 ![Zig](https://img.shields.io/badge/Zig-0.16-black?logo=zig) 
-![Tests](https://img.shields.io/badge/tests-48-passing-brightgreen)
 ![Status](https://img.shields.io/badge/status-v0.2.0%20(Pre--1.0)-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
