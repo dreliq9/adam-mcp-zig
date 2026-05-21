@@ -5,10 +5,10 @@
 **AI-shaped tools by default.** Never raw JSON or unchecked exceptions leaking to LLMs.
 
 ![Zig](https://img.shields.io/badge/Zig-0.16-black?logo=zig) 
-![Status](https://img.shields.io/badge/status-v0.2.0%20(Pre--1.0)-orange)
+![Status](https://img.shields.io/badge/status-v0.3.0%20(Pre--1.0)-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-**Status:** v0.2.0 (May 2026) • 48 passing tests • End-to-end stdio verified • Windows first-class + cross-compile ready
+**Status:** v0.3.0 (May 2026) • 48 passing tests • End-to-end stdio verified • Windows first-class + cross-compile ready
 
 > **Pre-1.0.** The public API in `src/root.zig` may change. Pin exact versions in `build.zig.zon` until v1.0.
 
@@ -73,7 +73,7 @@ zig build
 
 #### Add to Existing Project
 ```bash
-zig fetch --save https://github.com/dreliq9/adam-mcp-zig/archive/refs/tags/v0.2.0.tar.gz
+zig fetch --save https://github.com/dreliq9/adam-mcp-zig/archive/refs/tags/v0.3.0.tar.gz
 ```
 
 Then in `build.zig`:

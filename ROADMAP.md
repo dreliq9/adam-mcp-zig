@@ -20,6 +20,12 @@
 - Closes Phase B item 8 (Environ). `homeDir(allocator, environ_map)` reads `HOME` on POSIX and `USERPROFILE` on Windows via `init.environ_map.get(...)`. Public export.
 - PowerShell equivalents of the verification scripts: `tools/smoke_test.ps1`, `tools/byte_equivalence_check.ps1`.
 
+## 0.3.0 (2026-05-21) — shipped
+
+- **Tool callbacks now receive `std.Io`.** Wrapper-produced `call` signature is `fn(CallOpts, Allocator, Io, json.Value) Result(T)`; inner impl is `fn(Allocator, Io, Model) Result(T)`. Required because Zig 0.16 routes all blocking syscalls through `std.Io` (`std.fs.cwd()` and `std.process.Child.init` are gone). Surfaced the first time a downstream MCP tried to do real file/subprocess I/O from a tool callback.
+- Closes the half of Phase B item 7 about tool-function io threading; the `record_greeting`/`recent_greetings` file-persistence work is now a pure file-persistence task (no signature blocker remaining).
+- Wire format unchanged. Cross-language byte equivalence with `adam-mcp-py` preserved — io is `[n/a-language]` in the Python sibling.
+
 ## Phase B — remaining open items
 
 Each item corresponds to one or more `PORT-NOTE [deferred-B]` comments in source.
@@ -30,7 +36,7 @@ Each item corresponds to one or more `PORT-NOTE [deferred-B]` comments in source
 4. **`force` flag propagation** (base_server.zig). Pull `force` from MCP `tools/call` params and thread into `CallOpts.force` so `@requires` overrides work from the wire.
 5. **Audit rule bodies** (cli/audit_rules.zig). Port the Python rule checks: required files (already runnable via shell), passthrough-present, validates-usage, tool-file-naming, etc. Keep the §3.18 rule_id stability commitment intact.
 6. **`adam-mcp upgrade` and `adam-mcp audit --self-check`** (cli/main.zig). Port the Python dependency-bump + cross-link integrity flows.
-7. **Stateful tool file persistence** (reference-mcp/adam-greet-zig/src/mcp/history_tools.zig). `record_greeting` and `recent_greetings` are Phase A stubs — Phase B will write to `~/adam-greet-output/history.json` via `outputDir(...)` once io threading reaches tool functions.
+7. **Stateful tool file persistence** (reference-mcp/adam-greet-zig/src/mcp/history_tools.zig). `record_greeting` and `recent_greetings` are Phase A stubs — Phase B will write to `~/adam-greet-output/history.json` via `outputDir(...)`. (io threading half of this is closed as of v0.3.0; only the file-write implementation remains.)
 
 ## Phase C — public launch
 

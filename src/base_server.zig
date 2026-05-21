@@ -45,8 +45,13 @@ const log = std.log.scoped(.adam_mcp);
 /// writes a JSON-serialized Result to the provided Stringify writer.
 /// Returns true if the result represents an error (Status.FAIL), used by
 /// the caller to set `isError` in the tools/call envelope.
+///
+/// `io` is the std.Io vtable the tool will use for any blocking syscall
+/// (file read, subprocess spawn, network). Required since Zig 0.16
+/// removed direct stdlib I/O entry points.
 const DispatchFn = *const fn (
     allocator: std.mem.Allocator,
+    io: std.Io,
     args: std.json.Value,
     jws: *std.json.Stringify,
 ) anyerror!bool;
@@ -75,7 +80,7 @@ pub const BaseServer = struct {
     }
 
     /// Register a tool. `ToolType` must have a `call` declaration with
-    /// signature `fn(CallOpts, Allocator, std.json.Value) Result(T)`.
+    /// signature `fn(CallOpts, Allocator, std.Io, std.json.Value) Result(T)`.
     /// The is_passthrough flag is detected automatically via §6.30's
     /// `adam_mcp_passthrough_marker` declaration.
     pub fn registerTool(
@@ -110,10 +115,11 @@ pub const BaseServer = struct {
         return struct {
             fn dispatch(
                 allocator: std.mem.Allocator,
+                io: std.Io,
                 args: std.json.Value,
                 jws: *std.json.Stringify,
             ) anyerror!bool {
-                var result = ToolType.call(CallOpts{}, allocator, args);
+                var result = ToolType.call(CallOpts{}, allocator, io, args);
                 defer result.deinit(allocator);
                 try jws.write(result);
                 return result.status == Status.FAIL;
@@ -123,8 +129,9 @@ pub const BaseServer = struct {
 
     /// Handle one JSON-RPC message (a single line of JSON). Returns the
     /// response bytes (caller owns), or null for notifications that
-    /// don't expect a response.
-    pub fn handleMessage(self: *BaseServer, allocator: std.mem.Allocator, line: []const u8) !?[]u8 {
+    /// don't expect a response. `io` is forwarded to tool dispatchers
+    /// (only `tools/call` consumes it; initialize/list/ping are I/O-free).
+    pub fn handleMessage(self: *BaseServer, allocator: std.mem.Allocator, io: std.Io, line: []const u8) !?[]u8 {
         var parsed = std.json.parseFromSlice(std.json.Value, allocator, line, .{}) catch |err| {
             return try buildParseError(allocator, @errorName(err));
         };
@@ -155,7 +162,7 @@ pub const BaseServer = struct {
         } else if (std.mem.eql(u8, method, "tools/list")) {
             return try self.handleToolsList(allocator, id);
         } else if (std.mem.eql(u8, method, "tools/call")) {
-            return try self.handleToolsCall(allocator, id, params);
+            return try self.handleToolsCall(allocator, io, id, params);
         } else if (std.mem.startsWith(u8, method, "notifications/")) {
             // Accept (and ignore) inbound notifications. Phase A only
             // emits them upward via the wire as a reply omission.
@@ -228,7 +235,7 @@ pub const BaseServer = struct {
         return try allocator.dupe(u8, buf.written());
     }
 
-    fn handleToolsCall(self: *BaseServer, allocator: std.mem.Allocator, id: std.json.Value, params: std.json.Value) ![]u8 {
+    fn handleToolsCall(self: *BaseServer, allocator: std.mem.Allocator, io: std.Io, id: std.json.Value, params: std.json.Value) ![]u8 {
         const params_obj = switch (params) {
             .object => |o| o,
             else => return try buildInvalidParams(allocator, id, "params must be an object"),
@@ -254,7 +261,7 @@ pub const BaseServer = struct {
         defer inner_buf.deinit();
         var inner_jws: std.json.Stringify = .{ .writer = &inner_buf.writer };
 
-        const is_error = tool.dispatch(allocator, args, &inner_jws) catch |err| {
+        const is_error = tool.dispatch(allocator, io, args, &inner_jws) catch |err| {
             log.warn("tool '{s}' dispatch error: {s}", .{ tool_name, @errorName(err) });
             return try buildInternalError(allocator, id, "tool dispatch failed");
         };
@@ -322,7 +329,7 @@ pub const BaseServer = struct {
             while (std.mem.indexOfScalar(u8, pending.items, '\n')) |nl| {
                 const line = pending.items[0..nl];
                 if (line.len > 0) {
-                    if (self.handleMessage(self.allocator, line)) |maybe_response| {
+                    if (self.handleMessage(self.allocator, io, line)) |maybe_response| {
                         if (maybe_response) |response| {
                             defer self.allocator.free(response);
                             stdout.writeStreamingAll(io, response) catch |err| {
@@ -424,17 +431,19 @@ fn buildEmptyResult(allocator: std.mem.Allocator, id: std.json.Value) ![]u8 {
 // =============================================================================
 
 const TestEcho = struct {
-    pub fn call(opts: CallOpts, allocator: std.mem.Allocator, input: std.json.Value) Result(std.json.Value) {
+    pub fn call(opts: CallOpts, allocator: std.mem.Allocator, io: std.Io, input: std.json.Value) Result(std.json.Value) {
         _ = opts;
         _ = allocator;
+        _ = io;
         return Result(std.json.Value).ok(.{ .value = input, .mode_tag = "[LOCAL]" });
     }
 };
 
 const TestFail = struct {
-    pub fn call(opts: CallOpts, allocator: std.mem.Allocator, input: std.json.Value) Result(i32) {
+    pub fn call(opts: CallOpts, allocator: std.mem.Allocator, io: std.Io, input: std.json.Value) Result(i32) {
         _ = opts;
         _ = allocator;
+        _ = io;
         _ = input;
         return Result(i32).fail(.{ .hint = "intentional fail" });
     }
@@ -442,13 +451,15 @@ const TestFail = struct {
 
 test "BaseServer.handleMessage — initialize returns protocol version + serverInfo" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
     const line =
         \\{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"protocolVersion\":\"2024-11-05\"") != null);
@@ -458,13 +469,15 @@ test "BaseServer.handleMessage — initialize returns protocol version + serverI
 
 test "BaseServer.handleMessage — ping returns empty result" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
     const line =
         \\{"jsonrpc":"2.0","id":2,"method":"ping"}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expectEqualStrings(
@@ -474,6 +487,8 @@ test "BaseServer.handleMessage — ping returns empty result" {
 
 test "BaseServer — registerTool then tools/list shows the tool" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
@@ -488,7 +503,7 @@ test "BaseServer — registerTool then tools/list shows the tool" {
     const line =
         \\{"jsonrpc":"2.0","id":3,"method":"tools/list"}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"name\":\"echo\"") != null);
@@ -498,6 +513,8 @@ test "BaseServer — registerTool then tools/list shows the tool" {
 
 test "BaseServer — tools/call dispatches and wraps Result in envelope" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
@@ -506,7 +523,7 @@ test "BaseServer — tools/call dispatches and wraps Result in envelope" {
     const line =
         \\{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"echo","arguments":42}}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     // Inner Result JSON is escaped inside the content.text string — search
@@ -518,6 +535,8 @@ test "BaseServer — tools/call dispatches and wraps Result in envelope" {
 
 test "BaseServer — tools/call FAIL Result sets isError=true" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
@@ -526,7 +545,7 @@ test "BaseServer — tools/call FAIL Result sets isError=true" {
     const line =
         \\{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"brokenly","arguments":{}}}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":true") != null);
@@ -535,13 +554,15 @@ test "BaseServer — tools/call FAIL Result sets isError=true" {
 
 test "BaseServer — unknown method returns method_not_found" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
     const line =
         \\{"jsonrpc":"2.0","id":6,"method":"bogus"}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"code\":-32601") != null);
@@ -550,10 +571,12 @@ test "BaseServer — unknown method returns method_not_found" {
 
 test "BaseServer — parse error returns -32700" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
-    const response = (try server.handleMessage(allocator, "not json")).?;
+    const response = (try server.handleMessage(allocator, io, "not json")).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"code\":-32700") != null);
@@ -561,13 +584,15 @@ test "BaseServer — parse error returns -32700" {
 
 test "BaseServer — notification (no id) returns null" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     var server = BaseServer.init(allocator, "test-server");
     defer server.deinit();
 
     const line =
         \\{"jsonrpc":"2.0","method":"notifications/initialized"}
     ;
-    const response = try server.handleMessage(allocator, line);
+    const response = try server.handleMessage(allocator, io, line);
     try std.testing.expect(response == null);
 }
 
@@ -577,9 +602,10 @@ test "BaseServer — passthrough flag detected on registration" {
     defer server.deinit();
 
     const Passthrough = escape.passthrough(struct {
-        pub fn call(opts: CallOpts, alloc: std.mem.Allocator, input: std.json.Value) Result(std.json.Value) {
+        pub fn call(opts: CallOpts, alloc: std.mem.Allocator, io: std.Io, input: std.json.Value) Result(std.json.Value) {
             _ = opts;
             _ = alloc;
+            _ = io;
             return Result(std.json.Value).ok(.{ .value = input });
         }
     });

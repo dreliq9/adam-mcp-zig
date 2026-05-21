@@ -30,17 +30,25 @@ const CallOpts = @import("opts.zig").CallOpts;
 /// Wrap a tool function so it receives a typed Model parsed from JSON.
 /// Implements §1.2.
 ///
-/// `fn_impl` must have signature `fn(Allocator, Model) Result(OutputT)`.
+/// `fn_impl` must have signature `fn(Allocator, Io, Model) Result(OutputT)`.
+/// `Io` is `std.Io` — the vtable through which file/subprocess/network
+/// syscalls go in Zig 0.16. Tools that don't perform I/O take `io` as a
+/// `_ = io;` no-op; the parameter is mandatory so the dispatch shape is
+/// uniform.
 ///
 /// Usage:
 ///   const my_tool = validates(MyInput, struct {
-///       fn impl(alloc: std.mem.Allocator, in: MyInput) Result(MyOutput) {
+///       fn impl(alloc: std.mem.Allocator, io: std.Io, in: MyInput) Result(MyOutput) {
+///           const bytes = std.Io.Dir.cwd().readFileAlloc(io, in.path, alloc, .unlimited) catch {
+///               return Result(MyOutput).fail(.{ .hint = "read failed" });
+///           };
+///           defer alloc.free(bytes);
 ///           return Result(MyOutput).ok(.{ .value = .{...} });
 ///       }
 ///   }.impl);
 ///
 ///   // Caller side (typically the JSON-RPC router):
-///   const result = my_tool.call(.{}, alloc, json_value);
+///   const result = my_tool.call(.{}, alloc, io, json_value);
 ///
 /// PORT-NOTE [equivalent]: Python's wrapper accepts either a dict OR an
 ///   already-parsed Model instance (early-return if `isinstance(input,
@@ -49,6 +57,15 @@ const CallOpts = @import("opts.zig").CallOpts;
 ///   This is observably equivalent for the registration path (JSON
 ///   always arrives as std.json.Value); tests that want to bypass
 ///   parsing call fn_impl directly.
+///
+/// PORT-NOTE [n/a-language]: Python tool callbacks receive only
+///   `(allocator-equivalent, model)` — there is no Io vtable in Python.
+///   Zig 0.16 routes every blocking syscall (file read, subprocess
+///   spawn, network) through `std.Io`, so Zig tool callbacks take
+///   `(Allocator, Io, Model)`. This signature difference is internal:
+///   the wire format (JSON-RPC envelope, Result fields, byte order)
+///   is identical in both languages. Cross-language byte equivalence
+///   is preserved.
 pub fn validates(comptime Model: type, comptime fn_impl: anytype) type {
     const FnInfo = @typeInfo(@TypeOf(fn_impl)).@"fn";
     const ReturnT = FnInfo.return_type.?;
@@ -61,6 +78,7 @@ pub fn validates(comptime Model: type, comptime fn_impl: anytype) type {
         pub fn call(
             opts: CallOpts,
             allocator: std.mem.Allocator,
+            io: std.Io,
             input: std.json.Value,
         ) ReturnT {
             _ = opts; // validates does not consume opts.force; only requires does
@@ -86,7 +104,7 @@ pub fn validates(comptime Model: type, comptime fn_impl: anytype) type {
                     .diagnostics = diag,
                 });
             };
-            return fn_impl(allocator, parsed);
+            return fn_impl(allocator, io, parsed);
         }
     };
 }
@@ -100,13 +118,16 @@ const TestInput = struct {
     y: i32,
 };
 
-fn testImplSum(allocator: std.mem.Allocator, in: TestInput) Result(i32) {
+fn testImplSum(allocator: std.mem.Allocator, io: std.Io, in: TestInput) Result(i32) {
     _ = allocator;
+    _ = io;
     return Result(i32).ok(.{ .value = in.x + in.y });
 }
 
 test "validates — happy path parses JSON into typed model and calls inner" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = validates(TestInput, testImplSum);
 
     var parsed = try std.json.parseFromSlice(
@@ -118,7 +139,7 @@ test "validates — happy path parses JSON into typed model and calls inner" {
     );
     defer parsed.deinit();
 
-    var r = Wrapped.call(.{}, allocator, parsed.value);
+    var r = Wrapped.call(.{}, allocator, io, parsed.value);
     defer r.deinit(allocator);
 
     try std.testing.expectEqual(@as(?i32, 7), r.value);
@@ -126,6 +147,8 @@ test "validates — happy path parses JSON into typed model and calls inner" {
 
 test "validates — invalid input returns Result.fail with hint" {
     const allocator = std.testing.allocator;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = validates(TestInput, testImplSum);
 
     var parsed = try std.json.parseFromSlice(
@@ -137,7 +160,7 @@ test "validates — invalid input returns Result.fail with hint" {
     );
     defer parsed.deinit();
 
-    var r = Wrapped.call(.{}, allocator, parsed.value);
+    var r = Wrapped.call(.{}, allocator, io, parsed.value);
     defer r.deinit(allocator);
 
     try std.testing.expect(r.hint != null);

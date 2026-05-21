@@ -2,27 +2,28 @@
 //!
 //! PORT-NOTE [deferred-B]: Python writes JSON history to
 //!   `~/adam-greet-output/history.json` using `output_dir(...)`. The
-//!   Zig equivalent would call `adam.outputDir(allocator, io, "adam-greet")`
-//!   — but the current tool signature `fn(Allocator, InputT) Result(T)`
-//!   doesn't thread `io` through. Phase A returns a stub that doesn't
-//!   persist; Phase B will widen the tool signature or wire io via a
-//!   server-attached context so stateful tools work end-to-end.
+//!   tool signature now threads `io` (v0.3.0), so the wiring is in
+//!   place; the actual file-persistence implementation is still
+//!   deferred to Phase B alongside per-request arena ownership.
 
 const std = @import("std");
 const adam = @import("adam_mcp_zig");
 const schema = @import("../schema.zig");
 
-fn recordGreetingImpl(allocator: std.mem.Allocator, input: schema.RecordGreetingInput) adam.Result(void) {
+fn recordGreetingImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.RecordGreetingInput) adam.Result(void) {
     _ = allocator;
+    _ = io;
     _ = input;
-    // PORT-NOTE [deferred-B]: file persistence pending io threading.
+    // PORT-NOTE [deferred-B]: file persistence still pending; io is now
+    //   available via the threaded parameter.
     return adam.Result(void).ok(.{
         .mode_tag = "[LOCAL]",
     });
 }
 
-fn recentGreetingsImpl(allocator: std.mem.Allocator, input: schema.RecentGreetingsInput) adam.Result([]const []const u8) {
+fn recentGreetingsImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.RecentGreetingsInput) adam.Result([]const []const u8) {
     _ = allocator;
+    _ = io;
     _ = input;
     // Phase A: returns empty list. Phase B will read from output_dir.
     return adam.Result([]const []const u8).ok(.{

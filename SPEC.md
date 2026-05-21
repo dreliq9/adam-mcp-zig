@@ -24,7 +24,7 @@ Every public tool MUST:
 
 1. Be expressed as a wrapper type (`pub const X = adam.validates(...)` or similar) — not a bare function. Wrappers carry metadata the dispatcher needs.
 2. Return `Result(T)` for some Zig type `T`. Compile-time enforced.
-3. Receive a `std.mem.Allocator` as its first parameter; any owned data goes into `Result.value` or `Result.diagnostics`.
+3. Have signature `fn(std.mem.Allocator, std.Io, Model) Result(T)`. The `Io` parameter is required even when unused — the dispatch shape is uniform. Tools needing file/subprocess/network I/O reach the stdlib through `io`. Owned data goes into `Result.value` or `Result.diagnostics`.
 4. Set `Result.mode_tag` when the MCP exposes more than one backend.
 5. Provide a hint on every `WARN` and `FAIL` Result. Compile-time enforced.
 

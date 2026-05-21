@@ -4,8 +4,9 @@ const std = @import("std");
 const adam = @import("adam_mcp_zig");
 const schema = @import("../schema.zig");
 
-fn rawGreetingImpl(allocator: std.mem.Allocator, input: schema.RawGreetingInput) adam.Result([]const u8) {
+fn rawGreetingImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.RawGreetingInput) adam.Result([]const u8) {
     _ = allocator;
+    _ = io;
     return adam.Result([]const u8).ok(.{
         .value = input.template,
         .mode_tag = "[LOCAL]",

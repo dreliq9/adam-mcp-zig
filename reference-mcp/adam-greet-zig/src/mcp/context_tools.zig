@@ -7,8 +7,9 @@ const LocalBackend = @import("../backends/local.zig").LocalBackend;
 
 const EmptyInput = struct {};
 
-fn getMorningContextImpl(allocator: std.mem.Allocator, _: EmptyInput) adam.Result(types.MorningContext) {
+fn getMorningContextImpl(allocator: std.mem.Allocator, io: std.Io, _: EmptyInput) adam.Result(types.MorningContext) {
     _ = allocator;
+    _ = io;
     return adam.Result(types.MorningContext).ok(.{
         .value = .{
             .weather = LocalBackend.getWeather(),

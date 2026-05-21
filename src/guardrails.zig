@@ -20,10 +20,10 @@
 //!
 //! PORT-NOTE [equivalent]: Python's @requires accepts functions of any
 //!   arity via *args, **kwargs. Zig version constrains the wrapped
-//!   function to `fn(Allocator, InputT) Result(OutputT)` (the same shape
-//!   validates produces). Tools needing zero or multi-arg signatures
-//!   refactor into struct-input shape — which is house-style anyway,
-//!   since validates already enforces it.
+//!   function to `fn(Allocator, Io, InputT) Result(OutputT)` (the same
+//!   shape validates produces). Tools needing zero or multi-arg
+//!   signatures refactor into struct-input shape — which is house-style
+//!   anyway, since validates already enforces it.
 
 const std = @import("std");
 const Result = @import("result.zig").Result;
@@ -45,7 +45,9 @@ pub fn requires(
 ) type {
     const FnInfo = @typeInfo(@TypeOf(fn_impl)).@"fn";
     const ReturnT = FnInfo.return_type.?;
-    const InputT = FnInfo.params[1].type.?;
+    // Signature is `fn(Allocator, Io, InputT) Result(OutputT)`; InputT is the
+    // third positional parameter. See validates() for the mirroring shape.
+    const InputT = FnInfo.params[2].type.?;
 
     return struct {
         pub const adam_mcp_severity = severity;
@@ -54,10 +56,11 @@ pub fn requires(
         pub fn call(
             opts: CallOpts,
             allocator: std.mem.Allocator,
+            io: std.Io,
             input: InputT,
         ) ReturnT {
             if (opts.force or precondition()) {
-                return fn_impl(allocator, input);
+                return fn_impl(allocator, io, input);
             }
             switch (severity) {
                 .FAIL => return ReturnT.fail(.{ .hint = fail_hint }),
@@ -81,21 +84,26 @@ fn always_false() bool {
     return false;
 }
 
-fn impl_identity(allocator: std.mem.Allocator, in: PassValue) Result(i32) {
+fn impl_identity(allocator: std.mem.Allocator, io: std.Io, in: PassValue) Result(i32) {
     _ = allocator;
+    _ = io;
     return Result(i32).ok(.{ .value = in.n });
 }
 
 test "requires — precondition true, inner is invoked" {
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = requires(always_true, "should not see this", .WARN, impl_identity);
-    var r = Wrapped.call(.{}, std.testing.allocator, .{ .n = 42 });
+    var r = Wrapped.call(.{}, std.testing.allocator, io, .{ .n = 42 });
     defer r.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(?i32, 42), r.value);
 }
 
 test "requires — precondition false + severity WARN returns WARN with hint" {
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = requires(always_false, "do the X first", .WARN, impl_identity);
-    var r = Wrapped.call(.{}, std.testing.allocator, .{ .n = 1 });
+    var r = Wrapped.call(.{}, std.testing.allocator, io, .{ .n = 1 });
     defer r.deinit(std.testing.allocator);
     try std.testing.expectEqual(.WARN, @as(@TypeOf(r.status), r.status));
     try std.testing.expectEqualStrings("do the X first", r.hint.?);
@@ -103,16 +111,20 @@ test "requires — precondition false + severity WARN returns WARN with hint" {
 }
 
 test "requires — precondition false + severity FAIL returns FAIL with hint" {
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = requires(always_false, "destructive: locked", .FAIL, impl_identity);
-    var r = Wrapped.call(.{}, std.testing.allocator, .{ .n = 1 });
+    var r = Wrapped.call(.{}, std.testing.allocator, io, .{ .n = 1 });
     defer r.deinit(std.testing.allocator);
     try std.testing.expectEqual(.FAIL, @as(@TypeOf(r.status), r.status));
     try std.testing.expectEqualStrings("destructive: locked", r.hint.?);
 }
 
 test "requires — force=true bypasses precondition" {
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
     const Wrapped = requires(always_false, "blocked", .FAIL, impl_identity);
-    var r = Wrapped.call(.{ .force = true }, std.testing.allocator, .{ .n = 99 });
+    var r = Wrapped.call(.{ .force = true }, std.testing.allocator, io, .{ .n = 99 });
     defer r.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(?i32, 99), r.value);
 }

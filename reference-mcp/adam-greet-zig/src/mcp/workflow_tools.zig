@@ -6,7 +6,8 @@ const adam = @import("adam_mcp_zig");
 const schema = @import("../schema.zig");
 const LocalBackend = @import("../backends/local.zig").LocalBackend;
 
-fn morningBriefingImpl(allocator: std.mem.Allocator, input: schema.MorningBriefingInput) adam.Result([]const u8) {
+fn morningBriefingImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.MorningBriefingInput) adam.Result([]const u8) {
+    _ = io;
     const weather = LocalBackend.getWeather();
     const next_event = LocalBackend.getNextEvent();
 

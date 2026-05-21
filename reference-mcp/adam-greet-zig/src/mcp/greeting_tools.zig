@@ -11,7 +11,8 @@ fn formalityPhrasing(f: u8) []const u8 {
     return "good morning";
 }
 
-fn composeGreetingImpl(allocator: std.mem.Allocator, input: schema.GreetingInput) adam.Result([]const u8) {
+fn composeGreetingImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.GreetingInput) adam.Result([]const u8) {
+    _ = io;
     const phrase = formalityPhrasing(input.formality);
     const greeting = std.fmt.allocPrint(allocator, "{s}, {s}", .{ phrase, input.name }) catch {
         return adam.Result([]const u8).fail(.{ .hint = "out of memory rendering greeting" });
@@ -22,7 +23,8 @@ fn composeGreetingImpl(allocator: std.mem.Allocator, input: schema.GreetingInput
     });
 }
 
-fn composePersonalizedImpl(allocator: std.mem.Allocator, input: schema.PersonalizedGreetingInput) adam.Result([]const u8) {
+fn composePersonalizedImpl(allocator: std.mem.Allocator, io: std.Io, input: schema.PersonalizedGreetingInput) adam.Result([]const u8) {
+    _ = io;
     const greeting = std.fmt.allocPrint(allocator, "hello again, {s}", .{input.name}) catch {
         return adam.Result([]const u8).fail(.{ .hint = "out of memory" });
     };
