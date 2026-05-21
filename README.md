@@ -26,7 +26,7 @@ Most Zig MCP libraries stop at the protocol. This SDK adds the **contract layer*
 - CLI scaffolder (`adam-mcp new`)
 - AI-shaped philosophy (one tool per coherent capability)
 
-**House style & full rationale** live in the [Python sibling repo](https://github.com/dreliq9/adam-mcp-sdk).
+**House style & full rationale** live in [HOUSE_STYLE.md](./HOUSE_STYLE.md). The methodology is shared with the [Python sibling repo](https://github.com/dreliq9/adam-mcp-sdk); both specs use the same `rule_id` numbering (§3.18) so cross-language audit findings line up.
 
 **Comparison**
 

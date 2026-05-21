@@ -1,6 +1,6 @@
 # adam-mcp-zig — SPEC
 
-Versioned source of truth for what this SDK does. The cross-language methodology spec is `~/Projects/adam-mcp-sdk/HOUSE_STYLE.md` (CalVer 2026.05); this SPEC is the Zig-specific surface contract.
+Versioned source of truth for what this SDK does. The methodology spec lives at [HOUSE_STYLE.md](./HOUSE_STYLE.md) (CalVer 2026.05) — shared methodology with the [Python sibling repo](https://github.com/dreliq9/adam-mcp-sdk), same `rule_id` numbering. This SPEC is the Zig-specific surface contract.
 
 ## Scope
 

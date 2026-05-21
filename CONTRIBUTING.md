@@ -8,9 +8,9 @@ For anything beyond a typo or a one-line bug fix, open an issue first so we can 
 
 ## Required reading
 
-`HOUSE_STYLE.md` in the [sibling Python repo](https://github.com/dreliq9/adam-mcp-sdk/blob/main/HOUSE_STYLE.md) is the cross-language source of truth for what a tool is, what a `Result` is, and what an escape hatch is. This Zig SDK is a port that obeys it; new code obeys it too.
+[`HOUSE_STYLE.md`](./HOUSE_STYLE.md) is the methodology spec — what a tool is, what a `Result` is, what an escape hatch is. The same methodology is documented in the [Python sibling repo](https://github.com/dreliq9/adam-mcp-sdk/blob/main/HOUSE_STYLE.md) using Python-native examples; both specs use the same `rule_id` numbering (§3.18 stability) so cross-language audit findings line up.
 
-`SPEC.md` here is the Zig-specific contract — argv, env, stdio, wire shape, platform support.
+[`SPEC.md`](./SPEC.md) is the Zig-specific contract — argv, env, stdio, wire shape, platform support. Distinct from HOUSE_STYLE.md, which is language-agnostic methodology.
 
 ## PORT-NOTE discipline
 

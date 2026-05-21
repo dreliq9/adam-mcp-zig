@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Before filing, please confirm:
-        - The proposal doesn't break Principle Zero ("AI-shaped, not API-shaped") or Principle One ("Escape hatches always available"). See [HOUSE_STYLE.md](https://github.com/dreliq9/adam-mcp-sdk/blob/main/HOUSE_STYLE.md).
+        - The proposal doesn't break Principle Zero ("AI-shaped, not API-shaped") or Principle One ("Escape hatches always available"). See [HOUSE_STYLE.md](../blob/main/HOUSE_STYLE.md).
         - If it's a Phase B item already in [ROADMAP.md](../blob/main/ROADMAP.md), reference the number.
 
   - type: textarea

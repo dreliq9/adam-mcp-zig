@@ -12,5 +12,7 @@
         "LICENSE",
         "README.md",
         "CHANGELOG.md",
+        "HOUSE_STYLE.md",
+        "SPEC.md",
     },
 }

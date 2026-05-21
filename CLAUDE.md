@@ -16,12 +16,12 @@ Principle One. Specifically:
 
 - The agent wants to send a raw JSON-RPC envelope unconstrained by tool contracts → call the MCP's `passthrough`-marked tool. Every MCP built with this SDK ships one.
 - The agent wants to inspect what an AI-shaped tool's underlying API actually returned → use `Result.raw` on the wrapped tool's response.
-- A tool's `Result.value` shape is wrong for the agent's task → the tool's surface is wrong. Rewrite the tool, don't pad the agent. See HOUSE_STYLE.md Principle Zero.
+- A tool's `Result.value` shape is wrong for the agent's task → the tool's surface is wrong. Rewrite the tool, don't pad the agent. See [HOUSE_STYLE.md](./HOUSE_STYLE.md) Principle Zero.
 
 ## Co-tools
 
 Pairs well with:
-- `~/Projects/adam-mcp-sdk/` — the Python sibling and source of truth for HOUSE_STYLE.md
+- `~/Projects/adam-mcp-sdk/` — the Python sibling; same methodology, Python-native examples
 - `mcp-author` skill in the Claude Code plugin pack (auto-activates on MCP-building phrases)
 - `corpus-retrieval` — searching `zig-std` and `zig-projects` corpora when checking 0.16 stdlib idioms
 
