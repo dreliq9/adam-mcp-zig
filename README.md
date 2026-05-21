@@ -71,6 +71,28 @@ zig build
 ./tools/smoke_test.sh    # or smoke_test.ps1 on Windows
 ```
 
+#### Install to a stable path
+
+For long-lived use (CLI on PATH, reference MCP wired into a host that needs a fixed binary location), use the install scripts. They build with `-Doptimize=ReleaseSafe` and drop both binaries at `$PREFIX/bin/` — default prefix `~/.local`.
+
+```bash
+./install.sh                          # POSIX
+PREFIX=~/opt ./install.sh             # alternate prefix
+```
+
+```powershell
+.\install.ps1                         # Windows
+.\install.ps1 -Prefix C:\opt          # alternate prefix
+```
+
+Produces `$PREFIX/bin/adam-mcp` (the CLI) and `$PREFIX/bin/adam-greet-zig` (the reference MCP). To register the reference MCP with Claude Code at user scope:
+
+```bash
+claude mcp add --scope user adam-greet -- ~/.local/bin/adam-greet-zig
+```
+
+Subsequent `./install.sh` runs overwrite the binaries in place — no re-registration needed.
+
 #### Add to Existing Project
 ```bash
 zig fetch --save https://github.com/dreliq9/adam-mcp-zig/archive/refs/tags/v0.3.0.tar.gz
@@ -95,7 +117,8 @@ const GreetingInput = struct {
     formality: u8 = 5,
 };
 
-fn composeGreetingImpl(allocator: std.mem.Allocator, in: GreetingInput) adam.Result([]const u8) {
+fn composeGreetingImpl(allocator: std.mem.Allocator, io: std.Io, in: GreetingInput) adam.Result([]const u8) {
+    _ = io; // unused for this tool; required for uniform dispatch shape
     const phrase: []const u8 = if (in.formality > 6) "good morning" else "hello";
     const greeting = std.fmt.allocPrint(allocator, "{s}, {s}!", .{ phrase, in.name }) catch {
         return adam.Result([]const u8).fail(.{ .hint = "out of memory" });
