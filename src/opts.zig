@@ -17,8 +17,9 @@ pub const CallOpts = struct {
     force: bool = false,
     /// Server-owned I/O context. Null for pure-compute tools and for
     /// in-process unit tests that call a wrapper directly. Threaded in by
-    /// BaseServer.run(); see context.zig. PORT-NOTE [equivalent]: Python
-    /// tools reach request context via FastMCP; Zig threads it explicitly.
+    /// BaseServer.run(); see context.zig. Implements §2.10 / §4.19.
+    /// PORT-NOTE [equivalent]: Python tools reach request context via
+    /// FastMCP; Zig threads it explicitly.
     ctx: ?*Context = null,
 };
 

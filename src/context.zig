@@ -1,5 +1,11 @@
 //! Server-owned I/O context threaded into tool dispatch.
-//! Implements deferred-B #8 (io/output-dir threading) of the Zig port plan.
+//! Implements §2.10 (predictable output location) as the dispatch-threading
+//! wrapper over output.zig's outputDir/homeDir; closes deferred-B #8
+//! (io/output-dir threading) of the Zig port plan.
+//!
+//! PORT-NOTE [n/a-language]: No Python counterpart — Python tools reach
+//!   request context via FastMCP; Context is the Zig-native equivalent that
+//!   carries the same capability through explicit threading.
 
 const std = @import("std");
 const output = @import("output.zig");
