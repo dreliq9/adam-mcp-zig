@@ -10,17 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Phase B targets
 See `ROADMAP.md`.
 
-## [0.3.0] — 2026-05-21
+## [0.3.0] — 2026-05-21 (integrated std.Io + Context/arena work)
 
 ### Breaking
 - **Tool callback signature widened to `fn(Allocator, Io, Model) Result(T)`.** Wrappers — `validates`, `requires`, and (transitively) `passthrough` — pass `std.Io` as the second positional argument to the inner impl. Required because Zig 0.16 routes every blocking syscall (file read, subprocess spawn, network) through `std.Io`; `std.fs.cwd()` and `std.process.Child.init` no longer exist. Tools that don't perform I/O take `io` as a `_ = io;` no-op so the dispatch shape is uniform.
-- **`BaseServer.handleMessage(allocator, io, line)` and `handleToolsCall(allocator, io, id, params)` add an `io` parameter.** `BaseServer.run(io)` forwards it down automatically — no source change for consumers that only call `run()`. Direct test-mode callers of `handleMessage` must update.
-- **`DispatchFn` widened to take `io`.** Internal type; only affects code that synthesizes its own dispatcher (none in the ecosystem).
+- **`BaseServer.handleMessage(allocator, io, line)` and `handleToolsCall(allocator, io, id, params)` add an `io` parameter.** `BaseServer.run(io, environ_map)` forwards it down automatically. Direct test-mode callers must update.
+- **`DispatchFn` widened to take `io`.** Internal type.
+
+### Added
+- `Context` (io + environ_map) threaded into tool dispatch via `CallOpts.ctx`; built and published by `BaseServer.run()` for the loop lifetime.
+- `validates` comptime-detects 3-arg I/O impls `fn(*Context, Allocator, Model)` and forwards the context (FAIL + hint when absent); pure-compute impls unchanged.
+- Per-request arena in `handleToolsCall` frees tool `value` allocations after the Result is serialized (closes deferred-B #5).
+
+### Changed
+- `BaseServer.run` now takes `(io, environ_map)`. Scaffolds and reference updated.
 
 ### Notes
-- Wire format unchanged. `Result` envelope, JSON-RPC envelope, and `tools/call` response shape are byte-identical to v0.2.0. Cross-language byte equivalence with `adam-mcp-py` is preserved — `io` is internal Zig plumbing with no Python equivalent. Marked `PORT-NOTE [n/a-language]` in `src/validation.zig`.
-- 48 passing tests on stock Zig 0.16.0 (unchanged from 0.2.0; test scaffolding updated to construct `std.Io.Threaded.init_single_threaded` per test).
-- Reference `adam-greet-zig` updated. The stale `[deferred-B]` note in `history_tools.zig` about "io threading pending" is collapsed; io is now available, only file persistence remains deferred.
+- Wire format / Result envelope / cross-language byte equivalence with Python unchanged (`io` and `Context` are Zig-internal plumbing).
+- 48 tests pass on stock Zig 0.16.0.
+- Reference `adam-greet-zig` updated; history_tools io-blocking note resolved (only pure file-persistence remains for stateful tools).
 
 ## [0.2.0] — 2026-05-20
 

@@ -31,12 +31,12 @@
 Each item corresponds to one or more `PORT-NOTE [deferred-B]` comments in source.
 
 1. **Comptime JSONSchema generation from Zig structs** (validation.zig, protocol.zig). Walk `@typeInfo(InputT)` to emit the `inputSchema` field automatically; remove the hand-written schema strings from registration sites.
-2. **Per-request arena allocator** (base_server.zig). Pass a fresh arena to each `dispatch(...)` call; free wholesale after writing the response. Cleans up tool-allocated strings inside `Result.value` without requiring `deinit` smarts.
+2. ~~**Per-request arena allocator** (base_server.zig).~~ ✅ **Done (0.3.0)** — `handleToolsCall` passes a fresh arena to `dispatch(...)`, freed wholesale after the Result is serialized into the long-lived response buffer.
 3. **Richer validation diagnostics** (validation.zig). Replace `@errorName(err)` with per-field path info via either a `@typeInfo` walk before parsing or `std.json.Scanner` with `Diagnostics` tracking. Pydantic parity.
 4. **`force` flag propagation** (base_server.zig). Pull `force` from MCP `tools/call` params and thread into `CallOpts.force` so `@requires` overrides work from the wire.
 5. **Audit rule bodies** (cli/audit_rules.zig). Port the Python rule checks: required files (already runnable via shell), passthrough-present, validates-usage, tool-file-naming, etc. Keep the §3.18 rule_id stability commitment intact.
 6. **`adam-mcp upgrade` and `adam-mcp audit --self-check`** (cli/main.zig). Port the Python dependency-bump + cross-link integrity flows.
-7. **Stateful tool file persistence** (reference-mcp/adam-greet-zig/src/mcp/history_tools.zig). `record_greeting` and `recent_greetings` are Phase A stubs — Phase B will write to `~/adam-greet-output/history.json` via `outputDir(...)`. (io threading half of this is closed as of v0.3.0; only the file-write implementation remains.)
+7. **Stateful tool file persistence** (reference-mcp/adam-greet-zig/src/mcp/history_tools.zig). `record_greeting` and `recent_greetings` are Phase A stubs — Phase B will write to `~/adam-greet-output/history.json` via `outputDir(...)`. **Unblocked as of 0.3.0** (combined std.Io + Context work): io now reaches tool functions through `Context` (3-arg impls) and per-request arenas; the stubs can be wired onto `Context.outputDir(...)`. (Only the actual file-write implementation remains.)
 
 ## Phase C — public launch
 
