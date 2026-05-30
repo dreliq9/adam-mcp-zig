@@ -38,6 +38,7 @@ const Status = @import("result.zig").Status;
 const CallOpts = @import("opts.zig").CallOpts;
 const escape = @import("escape.zig");
 const protocol = @import("protocol.zig");
+const Context = @import("context.zig").Context;
 
 const log = std.log.scoped(.adam_mcp);
 
@@ -50,6 +51,7 @@ const log = std.log.scoped(.adam_mcp);
 /// (file read, subprocess spawn, network). Required since Zig 0.16
 /// removed direct stdlib I/O entry points.
 const DispatchFn = *const fn (
+    ctx: ?*Context,
     allocator: std.mem.Allocator,
     io: std.Io,
     args: std.json.Value,
@@ -70,6 +72,10 @@ pub const BaseServer = struct {
     version: []const u8 = "0.0.1",
     tools: std.ArrayList(RegisteredTool) = .empty,
     initialized: bool = false,
+    /// Server-owned I/O context, published by `run()` for the loop's
+    /// lifetime and forwarded to tools via dispatch. Null when the server
+    /// is driven directly (e.g. `handleMessage` in tests). §2.10 / §4.19.
+    ctx: ?*Context = null,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) BaseServer {
         return .{ .allocator = allocator, .name = name };
@@ -114,12 +120,14 @@ pub const BaseServer = struct {
     fn makeDispatcher(comptime ToolType: type) DispatchFn {
         return struct {
             fn dispatch(
+                ctx: ?*Context,
                 allocator: std.mem.Allocator,
                 io: std.Io,
                 args: std.json.Value,
                 jws: *std.json.Stringify,
             ) anyerror!bool {
-                var result = ToolType.call(CallOpts{}, allocator, io, args);
+                // Combined: pass ctx (for local Context threading) + io (from remote std.Io 0.3.0)
+                var result = ToolType.call(CallOpts{ .ctx = ctx }, allocator, io, args);
                 defer result.deinit(allocator);
                 try jws.write(result);
                 return result.status == Status.FAIL;
@@ -261,7 +269,8 @@ pub const BaseServer = struct {
         defer inner_buf.deinit();
         var inner_jws: std.json.Stringify = .{ .writer = &inner_buf.writer };
 
-        const is_error = tool.dispatch(allocator, io, args, &inner_jws) catch |err| {
+        // Combined: forward self.ctx (Context threading) + the io from handleToolsCall (std.Io)
+        const is_error = tool.dispatch(self.ctx, allocator, io, args, &inner_jws) catch |err| {
             log.warn("tool '{s}' dispatch error: {s}", .{ tool_name, @errorName(err) });
             return try buildInternalError(allocator, id, "tool dispatch failed");
         };
@@ -298,6 +307,10 @@ pub const BaseServer = struct {
     /// each response is written as a line on stdout. Errors and
     /// diagnostics go to stderr via std.log.
     ///
+    /// Also builds the server Context (io + environ_map) and publishes it on
+    /// self.ctx for the loop's lifetime so I/O tools can reach it.
+    /// Implements §2.10 / §4.19 (server I/O context threading).
+    ///
     /// PORT-NOTE [equivalent]: Python's BaseServer.run() delegates to
     ///   FastMCP, which does the stdio loop. Zig owns the loop here.
     ///
@@ -307,7 +320,11 @@ pub const BaseServer = struct {
     ///   EOF is signalled by `error.EndOfStream` rather than `n == 0`,
     ///   which avoids the 0.15 Reader-on-pipe busy-loop bug noted in
     ///   pre-0.16 prototypes. The 4096-byte chunk size is unchanged.
-    pub fn run(self: *BaseServer, io: std.Io) !void {
+    pub fn run(self: *BaseServer, io: std.Io, environ_map: *const std.process.Environ.Map) !void {
+        var ctx = Context{ .io = io, .environ_map = environ_map };
+        self.ctx = &ctx;
+        defer self.ctx = null;
+
         const stdin = std.Io.File.stdin();
         const stdout = std.Io.File.stdout();
 
@@ -612,4 +629,64 @@ test "BaseServer — passthrough flag detected on registration" {
     try server.registerTool("escape", "raw passthrough", "{}", Passthrough);
 
     try std.testing.expect(server.tools.items[0].is_passthrough);
+}
+
+const TestCtxTool = struct {
+    const Input = struct {};
+    fn impl(ctx: *Context, allocator: std.mem.Allocator, in: Input) Result([]const u8) {
+        _ = in;
+        const h = ctx.home(allocator) catch {
+            return Result([]const u8).fail(.{ .hint = "no home" });
+        };
+        return Result([]const u8).ok(.{ .value = h, .mode_tag = "[LOCAL]" });
+    }
+    pub const Tool = @import("validation.zig").validates(Input, impl);
+};
+
+fn bsTestEnv(allocator: std.mem.Allocator, fake_home: []const u8) !std.process.Environ.Map {
+    var map = std.process.Environ.Map.init(allocator);
+    errdefer map.deinit();
+    const var_name = if (@import("builtin").os.tag == .windows) "USERPROFILE" else "HOME";
+    try map.put(var_name, fake_home);
+    return map;
+}
+
+test "BaseServer — tools/call threads ctx into a 3-arg I/O tool" {
+    const allocator = std.testing.allocator;
+    var server = BaseServer.init(allocator, "test-server");
+    defer server.deinit();
+
+    var env = try bsTestEnv(allocator, "/tmp/bs-home");
+    defer env.deinit();
+    var ctx = Context{ .io = undefined, .environ_map = &env };
+    server.ctx = &ctx; // inject directly (run() does this from io+env in production)
+
+    try server.registerTool("whereami", "returns home dir", "{}", TestCtxTool.Tool);
+
+    const line =
+        \\{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"whereami","arguments":{}}}
+    ;
+    const response = (try server.handleMessage(allocator, line)).?;
+    defer allocator.free(response);
+
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "/tmp/bs-home") != null);
+}
+
+test "BaseServer — 3-arg tool with no ctx set returns isError=true" {
+    const allocator = std.testing.allocator;
+    var server = BaseServer.init(allocator, "test-server");
+    defer server.deinit();
+    // server.ctx left null
+
+    try server.registerTool("whereami", "returns home dir", "{}", TestCtxTool.Tool);
+
+    const line =
+        \\{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"whereami","arguments":{}}}
+    ;
+    const response = (try server.handleMessage(allocator, line)).?;
+    defer allocator.free(response);
+
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "needs server I/O context") != null);
 }
