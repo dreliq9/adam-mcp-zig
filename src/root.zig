@@ -20,6 +20,7 @@ const backend_mod = @import("backend.zig");
 const opts_mod = @import("opts.zig");
 const protocol_mod = @import("protocol.zig");
 const base_server_mod = @import("base_server.zig");
+const context_mod = @import("context.zig");
 
 pub const Result = result_mod.Result;
 pub const Status = result_mod.Status;
@@ -40,6 +41,7 @@ pub const Severity = guardrails_mod.Severity;
 pub const Backend = backend_mod.Backend;
 pub const detectBackend = backend_mod.detectBackend;
 pub const CallOpts = opts_mod.CallOpts;
+pub const Context = context_mod.Context;
 
 pub const BaseServer = base_server_mod.BaseServer;
 pub const protocol = protocol_mod;
@@ -55,4 +57,5 @@ test {
     _ = opts_mod;
     _ = protocol_mod;
     _ = base_server_mod;
+    _ = context_mod;
 }
