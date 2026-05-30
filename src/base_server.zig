@@ -107,16 +107,14 @@ pub const BaseServer = struct {
 
     /// Synthesize a dispatcher for the given ToolType at comptime.
     ///
-    /// PORT-NOTE [deferred-B]: Per-request memory ownership is loose
-    ///   in Phase A. Tool functions allocate strings (via
-    ///   allocPrint, parseFromValueLeaky-owned slices, etc.) that
-    ///   live inside Result.value but Result.deinit only frees
-    ///   metrics and diagnostics. Net effect: each tool call leaks
-    ///   a few hundred bytes. Phase B will allocate a per-request
-    ///   arena (passed to dispatch, freed wholesale after the
-    ///   response is written) so tools can allocate freely without
-    ///   ownership concerns. Today this matches Python's GC-on-
-    ///   request-boundary semantics; tomorrow it'll be tighter.
+    /// PORT-NOTE [equivalent]: Per-request memory is freed via a per-call
+    ///   arena allocated in handleToolsCall and passed to dispatch as the
+    ///   tool allocator. Tool functions allocate freely (allocPrint,
+    ///   parseFromValueLeaky-owned slices, Result.value, etc.); the Result
+    ///   is serialized into the long-lived inner_buf before the arena is
+    ///   dropped wholesale after the response is written. Matches Python's
+    ///   GC-on-request-boundary semantics with deterministic release.
+    ///   (Resolves the former deferred-B #5 per-call leak.)
     fn makeDispatcher(comptime ToolType: type) DispatchFn {
         return struct {
             fn dispatch(
@@ -265,12 +263,22 @@ pub const BaseServer = struct {
 
         // Serialize the Result into a JSON string buffer, then wrap into
         // the MCP tools/call envelope as a single text content item.
+        //
+        // Per-request arena: the tool allocates freely into `arena`; its
+        // Result is serialized into inner_buf (long-lived allocator) inside
+        // dispatch, then the arena is dropped wholesale. inner_buf MUST stay
+        // on the long-lived `allocator` so the serialized JSON survives the
+        // arena drop. Closes deferred-B #5 (per-call value leak).
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const tool_alloc = arena.allocator();
+
         var inner_buf: std.Io.Writer.Allocating = .init(allocator);
         defer inner_buf.deinit();
         var inner_jws: std.json.Stringify = .{ .writer = &inner_buf.writer };
 
-        // Combined: forward self.ctx (Context threading) + the io from handleToolsCall (std.Io)
-        const is_error = tool.dispatch(self.ctx, allocator, io, args, &inner_jws) catch |err| {
+        // Combined: ctx (Context threading) + tool_alloc (arena for tool values) + io (std.Io plumbing)
+        const is_error = tool.dispatch(self.ctx, tool_alloc, io, args, &inner_jws) catch |err| {
             log.warn("tool '{s}' dispatch error: {s}", .{ tool_name, @errorName(err) });
             return try buildInternalError(allocator, id, "tool dispatch failed");
         };
@@ -689,4 +697,38 @@ test "BaseServer — 3-arg tool with no ctx set returns isError=true" {
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "needs server I/O context") != null);
+}
+
+// A tool that allocates a sizeable value every call. Under std.testing.allocator
+// (which detects leaks) this passes only if the dispatcher frees the allocation.
+const TestAllocTool = struct {
+    const Input = struct {};
+    fn impl(allocator: std.mem.Allocator, in: Input) Result([]const u8) {
+        _ = in;
+        const blob = allocator.alloc(u8, 4096) catch {
+            return Result([]const u8).fail(.{ .hint = "oom" });
+        };
+        @memset(blob, 'a');
+        return Result([]const u8).ok(.{ .value = blob });
+    }
+    pub const Tool = @import("validation.zig").validates(Input, impl);
+};
+
+test "BaseServer — per-request arena frees tool value allocations" {
+    const allocator = std.testing.allocator; // leak-checking allocator
+    var server = BaseServer.init(allocator, "test-server");
+    defer server.deinit();
+
+    try server.registerTool("blob", "allocates 4k", "{}", TestAllocTool.Tool);
+
+    // Call several times; if value allocations leaked, testing.allocator fails.
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        const line =
+            \\{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"blob","arguments":{}}}
+        ;
+        const response = (try server.handleMessage(allocator, line)).?;
+        allocator.free(response);
+    }
+    // No explicit assert: the test passes iff std.testing.allocator reports no leak.
 }
