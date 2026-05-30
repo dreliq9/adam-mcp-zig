@@ -340,7 +340,7 @@ const main_zig =
     \\    var server = adam.BaseServer.init(init.gpa, "{{name}}");
     \\    defer server.deinit();
     \\    try lib.registerAll(&server);
-    \\    try server.run(init.io);
+    \\    try server.run(init.io, &init.environ_map);
     \\}
     \\
 ;
