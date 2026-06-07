@@ -671,10 +671,13 @@ test "BaseServer — tools/call threads ctx into a 3-arg I/O tool" {
 
     try server.registerTool("whereami", "returns home dir", "{}", TestCtxTool.Tool);
 
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+
     const line =
         \\{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"whereami","arguments":{}}}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":false") != null);
@@ -689,10 +692,13 @@ test "BaseServer — 3-arg tool with no ctx set returns isError=true" {
 
     try server.registerTool("whereami", "returns home dir", "{}", TestCtxTool.Tool);
 
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+
     const line =
         \\{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"whereami","arguments":{}}}
     ;
-    const response = (try server.handleMessage(allocator, line)).?;
+    const response = (try server.handleMessage(allocator, io, line)).?;
     defer allocator.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"isError\":true") != null);
@@ -703,7 +709,8 @@ test "BaseServer — 3-arg tool with no ctx set returns isError=true" {
 // (which detects leaks) this passes only if the dispatcher frees the allocation.
 const TestAllocTool = struct {
     const Input = struct {};
-    fn impl(allocator: std.mem.Allocator, in: Input) Result([]const u8) {
+    fn impl(allocator: std.mem.Allocator, io: std.Io, in: Input) Result([]const u8) {
+        _ = io;
         _ = in;
         const blob = allocator.alloc(u8, 4096) catch {
             return Result([]const u8).fail(.{ .hint = "oom" });
@@ -727,7 +734,9 @@ test "BaseServer — per-request arena frees tool value allocations" {
         const line =
             \\{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"blob","arguments":{}}}
         ;
-        const response = (try server.handleMessage(allocator, line)).?;
+        var threaded: std.Io.Threaded = .init_single_threaded;
+        const io = threaded.io();
+        const response = (try server.handleMessage(allocator, io, line)).?;
         allocator.free(response);
     }
     // No explicit assert: the test passes iff std.testing.allocator reports no leak.

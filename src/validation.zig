@@ -26,11 +26,16 @@
 const std = @import("std");
 const Result = @import("result.zig").Result;
 const CallOpts = @import("opts.zig").CallOpts;
+const Context = @import("context.zig").Context;
 
 /// Wrap a tool function so it receives a typed Model parsed from JSON.
 /// Implements §1.2.
 ///
-/// `fn_impl` must have signature `fn(Allocator, Io, Model) Result(OutputT)`.
+/// Tool impl signatures (after std.Io + Context integration):
+/// - Pure / direct-I/O tools: `fn(Allocator, Io, Model) Result(OutputT)`
+/// - Context/I-O tools: `fn(*Context, Allocator, Model) Result(OutputT)`
+///   (ctx bundles io + environ_map for the tool lifetime)
+///
 /// `Io` is `std.Io` — the vtable through which file/subprocess/network
 /// syscalls go in Zig 0.16. Tools that don't perform I/O take `io` as a
 /// `_ = io;` no-op; the parameter is mandatory so the dispatch shape is
@@ -69,12 +74,14 @@ const CallOpts = @import("opts.zig").CallOpts;
 pub fn validates(comptime Model: type, comptime fn_impl: anytype) type {
     const FnInfo = @typeInfo(@TypeOf(fn_impl)).@"fn";
     const ReturnT = FnInfo.return_type.?;
-    // Detect whether the impl wants the server I/O Context. Convention:
-    //   2 params  fn(Allocator, Model)          -> pure compute (unchanged)
-    //   3 params  fn(*Context, Allocator, Model) -> I/O tool, ctx forwarded
-    // The branch on `wants_ctx` is comptime-known, so the dead arm is not
-    // analyzed — a 2-arg impl never sees the 3-arg call and vice versa.
-    const wants_ctx = FnInfo.params.len == 3;
+    // Detect whether the impl wants the server I/O Context (post std.Io + Context work).
+    // - Pure / direct-I/O tools: fn(Allocator, Io, Model)
+    // - Context tools: fn(*Context, Allocator, Model)   [ctx bundles .io + environ etc.]
+    // Detection by first parameter type (robust after Io widened pure tools to 3 params).
+    const wants_ctx = if (FnInfo.params.len > 0) blk: {
+        const first = FnInfo.params[0].type orelse break :blk false;
+        break :blk first == *Context;
+    } else false;
 
     return struct {
         /// Marker exposing the input model for the audit pass / future
@@ -193,8 +200,6 @@ test "validates — exposes input model marker for audit" {
 // 3-arg (ctx-forwarding) tests
 // =============================================================================
 
-const Context = @import("context.zig").Context;
-
 const CtxInput = struct { name: []const u8 };
 
 // 3-arg impl: proves the context is forwarded. Returns the home dir so the
@@ -221,6 +226,9 @@ test "validates — 3-arg impl receives forwarded ctx" {
     defer env.deinit();
     var ctx = Context{ .io = undefined, .environ_map = &env };
 
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+
     const Wrapped = validates(CtxInput, testImplWithCtx);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, allocator,
@@ -234,7 +242,7 @@ test "validates — 3-arg impl receives forwarded ctx" {
     defer arena.deinit();
     const call_alloc = arena.allocator();
 
-    const r = Wrapped.call(.{ .ctx = &ctx }, call_alloc, parsed.value);
+    const r = Wrapped.call(.{ .ctx = &ctx }, call_alloc, io, parsed.value);
     // r.value (the home string) was allocated by testImplWithCtx via
     // ctx.home(call_alloc) — it lives in the arena, freed by arena.deinit().
     // r.deinit would double-free it, so we skip it and rely on the arena.
@@ -244,7 +252,7 @@ test "validates — 3-arg impl receives forwarded ctx" {
     // home string in a separate scope so we can free it correctly.
     var arena2 = std.heap.ArenaAllocator.init(allocator);
     defer arena2.deinit();
-    var r2 = Wrapped.call(.{ .ctx = &ctx }, arena2.allocator(), parsed.value);
+    var r2 = Wrapped.call(.{ .ctx = &ctx }, arena2.allocator(), io, parsed.value);
     try std.testing.expect(r2.value != null);
     try std.testing.expectEqualStrings("/tmp/v-home", r2.value.?);
     r2.value = null; // prevent r2.deinit from freeing arena-owned memory
@@ -255,6 +263,9 @@ test "validates — 3-arg impl with null ctx returns FAIL+hint" {
     const allocator = std.testing.allocator;
     const Wrapped = validates(CtxInput, testImplWithCtx);
 
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+
     var parsed = try std.json.parseFromSlice(std.json.Value, allocator,
         \\{"name": "x"}
     , .{});
@@ -264,7 +275,7 @@ test "validates — 3-arg impl with null ctx returns FAIL+hint" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var r = Wrapped.call(.{}, arena.allocator(), parsed.value); // no ctx
+    var r = Wrapped.call(.{}, arena.allocator(), io, parsed.value); // no ctx
     // r.hint is a string literal (comptime), not heap — safe to check then drop.
     try std.testing.expect(r.value == null);
     try std.testing.expect(r.hint != null);

@@ -9,5 +9,5 @@ pub fn main(init: std.process.Init) !void {
     defer server.deinit();
 
     try lib.registerAll(&server);
-    try server.run(init.io, &init.environ_map);
+    try server.run(init.io, init.environ_map);
 }
